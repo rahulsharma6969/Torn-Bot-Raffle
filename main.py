@@ -7,16 +7,15 @@ from discord.ext import commands, tasks
 from discord import app_commands
 
 # ================= CONFIGURATION =================
-# Set these in your environment variables or replace directly here
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
-HOST_API_KEY = os.environ["HOST_API_KEY"]   # The API Key of the account RECEIVING items
-HOST_TORN_ID = "3101086"         # The Torn ID of the account RECEIVING items
-LOG_CHANNEL_ID = 1394140942327484446                # REPLACE THIS with your Discord Channel ID
+HOST_API_KEY = os.environ["HOST_API_KEY"]   # recepient api key
+HOST_TORN_ID = "xxxxxxxx"         # torn id of account receiving items
+LOG_CHANNEL_ID = xxxxxxxxx                # channel id where bot is running "general right now"
 
 RAFFLE_CONFIG = {
-    "TICKET_PRICE": 400000,      # Value required for 1 ticket
+    "TICKET_PRICE": 400000,      # value of 1 ticket
     "TRIGGER_MSG": "LLF",        # Message user must send with item
-    "LOG_ID": 4103,              # 'Item receive' Log ID (Verified)
+    "LOG_ID": 4103,              # id for receiving item
 }
 
 # File Names
@@ -42,7 +41,6 @@ def save_json(filename, data):
         json.dump(data, f, indent=4)
     os.replace(temp, filename)
 
-# Load Initial Data
 linked_users = load_json(LINKS_FILE, {})
 raffle_data = load_json(RAFFLE_FILE, {
     "meta": {"last_log_ts": 0, "total_pool_value": 0},
@@ -75,7 +73,7 @@ async def update_item_prices():
             market_val = i_data.get('market_value', 0)
             buy_price = i_data.get('buy_price', 0)
             
-            # THE LOGIC: If market is 0, fall back to NPC Buy Price
+            # If market is 0, fall back to NPC Buy Price
             final_price = market_val if market_val > 0 else buy_price
             
             new_prices[str(i_id)] = final_price
@@ -211,7 +209,7 @@ async def check_donations():
 # ================= COMMANDS =================
 @bot.tree.command(name="link", description="Link your Torn account manually.")
 async def link(interaction: discord.Interaction, torn_id: int):
-    # This updates your linked_users.json
+    # update linked_users.json
     linked_users[str(interaction.user.id)] = torn_id
     save_json(LINKS_FILE, linked_users)
     await interaction.response.send_message(f"✅ Linked to Torn ID: {torn_id}", ephemeral=True)
@@ -223,7 +221,6 @@ async def tickets(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Link your account first with `/link`!", ephemeral=True)
         return
     
-    # We use str() because JSON keys are always strings
     count = raffle_data["tickets"].get(str(user_torn_id), 0)
     await interaction.response.send_message(f"🎟️ You have **{count}** tickets!", ephemeral=True)
 
@@ -246,5 +243,6 @@ async def force_update(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     await update_item_prices()
     await interaction.followup.send(f"✅ Prices updated! Tracking {len(item_prices)} items.")
+
 
 bot.run(DISCORD_TOKEN)
