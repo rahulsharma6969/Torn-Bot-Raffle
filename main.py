@@ -209,13 +209,15 @@ async def check_donations():
 # ================= COMMANDS =================
 @bot.tree.command(name="link", description="Link your Torn account manually.")
 async def link(interaction: discord.Interaction, torn_id: int):
-    # update linked_users.json
     linked_users[str(interaction.user.id)] = torn_id
     save_json(LINKS_FILE, linked_users)
     await interaction.response.send_message(f"✅ Linked to Torn ID: {torn_id}", ephemeral=True)
 
 @bot.tree.command(name="tickets", description="Check your current raffle tickets.")
 async def tickets(interaction: discord.Interaction):
+    global raffle_data  # <--- FIXED: At the top
+    raffle_data = load_json(RAFFLE_FILE, raffle_data)
+
     user_torn_id = linked_users.get(str(interaction.user.id))
     if not user_torn_id:
         await interaction.response.send_message("❌ Link your account first with `/link`!", ephemeral=True)
@@ -226,6 +228,9 @@ async def tickets(interaction: discord.Interaction):
 
 @bot.tree.command(name="pot", description="View raffle statistics.")
 async def pot(interaction: discord.Interaction):
+    global raffle_data  # <--- FIXED: At the top
+    raffle_data = load_json(RAFFLE_FILE, raffle_data)
+    
     total_val = raffle_data["meta"]["total_pool_value"]
     total_tix = sum(raffle_data["tickets"].values())
     participants = len(raffle_data["tickets"])
@@ -240,19 +245,19 @@ async def pot(interaction: discord.Interaction):
 @bot.tree.command(name="update_prices", description="Admin: Force update item prices.")
 @app_commands.checks.has_permissions(administrator=True)
 async def force_update(interaction: discord.Interaction):
+    global item_prices
     await interaction.response.defer(ephemeral=True)
     await update_item_prices()
     await interaction.followup.send(f"✅ Prices updated! Tracking {len(item_prices)} items.")
 
-
 @bot.tree.command(name="reset_raffle", description="Admin: Start a NEW raffle round (Flushes tickets).")
 @app_commands.checks.has_permissions(administrator=True)
 async def reset_raffle(interaction: discord.Interaction):
-    # 1. Safety Check (Prevent accidental resets)
+    global raffle_data  # <--- FIXED: This was the cause of your error
+    
     await interaction.response.send_message(
         "⚠️ **WARNING: STARTING NEW RAFFLE** ⚠️\n"
         "This will set all ticket counts to **0**.\n"
-        "It will NOT delete user links.\n\n"
         "Type `CONFIRM` in this channel to proceed."
     )
 
@@ -260,26 +265,21 @@ async def reset_raffle(interaction: discord.Interaction):
         return m.author == interaction.user and m.content == "CONFIRM" and m.channel == interaction.channel
 
     try:
-        # Wait 30 seconds for the user to type CONFIRM
         await bot.wait_for("message", check=check, timeout=30.0)
     except asyncio.TimeoutError:
         await interaction.followup.send("❌ Timed out. Raffle NOT reset.")
         return
 
-    # 2. Reset being done here
+    # Reset Data
     raffle_data["tickets"] = {}
     raffle_data["meta"]["total_pool_value"] = 0
-    
-    # Save immediately
     save_json(RAFFLE_FILE, raffle_data)
     
-    await interaction.followup.send(
-        "✅ **Raffle Reset Complete!**\n"
-        "• Ticket counts flushed to 0.\n"
-        "• Pot value reset to $0.\n"
-        "• Bot is ready to accept NEW items for the next round."
-    )
-
+    # Reload memory immediately
+    raffle_data = load_json(RAFFLE_FILE, raffle_data)
+    
+    await interaction.followup.send("✅ **Raffle Reset!** All tickets are 0.")
 
 bot.run(DISCORD_TOKEN)
+
 
