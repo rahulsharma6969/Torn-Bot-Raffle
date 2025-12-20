@@ -211,9 +211,10 @@ async def check_donations():
 @bot.tree.command(name="link", description="Verify your Torn account using your API Key.")
 @app_commands.describe(api_key="Your public Torn API Key (We do not save this).")
 async def link(interaction: discord.Interaction, api_key: str):
+    # 1. Defer response
     await interaction.response.defer(ephemeral=True)
 
-    # Verify with Torn API
+    # 2. Verify with Torn API
     url = f"https://api.torn.com/user/?selections=basic&key={api_key}"
     
     try:
@@ -221,13 +222,11 @@ async def link(interaction: discord.Interaction, api_key: str):
         response = await loop.run_in_executor(None, requests.get, url)
         data = response.json()
         
-        # Check for Invalid Key / Error
         if 'error' in data:
             error_msg = data['error'].get('error')
             await interaction.followup.send(f"❌ **Verification Failed**\nTorn says: {error_msg}")
             return
             
-        # Get Real ID
         real_id = data['player_id']
         name = data['name']
         
@@ -235,32 +234,42 @@ async def link(interaction: discord.Interaction, api_key: str):
         await interaction.followup.send(f"❌ Connection Error: {e}")
         return
 
-    # Save to Database
+    # 3. Save to Database
     linked_users[str(interaction.user.id)] = real_id
     save_json(LINKS_FILE, linked_users)
 
-    # Assign the Role
+    # 4. Assign Role AND Rename
     role = interaction.guild.get_role(VERIFIED_ROLE_ID)
     
     if role:
         try:
+            # A. Give the Role
             await interaction.user.add_roles(role)
+            
+            # B. Rename the User (This is the line that was missing)
+            new_nick = f"{name} [{real_id}]"
+            try:
+                await interaction.user.edit(nick=new_nick)
+                nick_msg = f"👤 Nickname changed to **{new_nick}**"
+            except discord.Forbidden:
+                nick_msg = f"⚠️ Verified as **{new_nick}**, but I can't rename you (You might be an Admin)."
+
             await interaction.followup.send(
-                f"✅ **Verified!**\n"
-                f"👤 Welcome, **{name}** [{real_id}]\n"
-                f"🔓 Access granted to server channels."
+                f"✅ **Verification Successful!**\n"
+                f"{nick_msg}\n"
+                f"🔓 Access granted."
             )
+
         except discord.Forbidden:
             await interaction.followup.send(
                 f"✅ Recognized as {name} [{real_id}], but...\n"
                 f"❌ **Error:** I cannot give you the role.\n"
-                f"👉 Admin must move the 'TornBot' role HIGHER than 'Verified' role in Server Settings."
+                f"👉 Admin: Check Bot Role Hierarchy."
             )
     else:
-        await interaction.followup.send(
-            f"✅ Recognized as {name} [{real_id}], but...\n"
-            f"⚠️ **Config Error:** The Verified Role ID in the bot code is incorrect."
-        )
+        await interaction.followup.send("⚠️ **Config Error:** Verified Role ID is missing.")
+
+
 
 @bot.tree.command(name="tickets", description="Check your current raffle tickets.")
 async def tickets(interaction: discord.Interaction):
@@ -330,6 +339,7 @@ async def reset_raffle(interaction: discord.Interaction):
     await interaction.followup.send("✅ **Raffle Reset!** All tickets are 0.")
 
 bot.run(DISCORD_TOKEN)
+
 
 
 
