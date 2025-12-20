@@ -10,6 +10,7 @@ from discord import app_commands
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 HOST_API_KEY = os.environ["HOST_API_KEY"]   # recepient api key
 HOST_TORN_ID = "xxxxxxxx"         # torn id of account receiving items
+VERIFIED_ROLE_ID = xxxxxxxxxxxx  # id of the role
 LOG_CHANNEL_ID = xxxxxxxxx                # channel id where bot is running "general right now"
 
 RAFFLE_CONFIG = {
@@ -207,11 +208,59 @@ async def check_donations():
         save_json(RAFFLE_FILE, raffle_data)
 
 # ================= COMMANDS =================
-@bot.tree.command(name="link", description="Link your Torn account manually.")
-async def link(interaction: discord.Interaction, torn_id: int):
-    linked_users[str(interaction.user.id)] = torn_id
+@bot.tree.command(name="link", description="Verify your Torn account using your API Key.")
+@app_commands.describe(api_key="Your public Torn API Key (We do not save this).")
+async def link(interaction: discord.Interaction, api_key: str):
+    await interaction.response.defer(ephemeral=True)
+
+    # Verify with Torn API
+    url = f"https://api.torn.com/user/?selections=basic&key={api_key}"
+    
+    try:
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(None, requests.get, url)
+        data = response.json()
+        
+        # Check for Invalid Key / Error
+        if 'error' in data:
+            error_msg = data['error'].get('error')
+            await interaction.followup.send(f"❌ **Verification Failed**\nTorn says: {error_msg}")
+            return
+            
+        # Get Real ID
+        real_id = data['player_id']
+        name = data['name']
+        
+    except Exception as e:
+        await interaction.followup.send(f"❌ Connection Error: {e}")
+        return
+
+    # Save to Database
+    linked_users[str(interaction.user.id)] = real_id
     save_json(LINKS_FILE, linked_users)
-    await interaction.response.send_message(f"✅ Linked to Torn ID: {torn_id}", ephemeral=True)
+
+    # Assign the Role
+    role = interaction.guild.get_role(VERIFIED_ROLE_ID)
+    
+    if role:
+        try:
+            await interaction.user.add_roles(role)
+            await interaction.followup.send(
+                f"✅ **Verified!**\n"
+                f"👤 Welcome, **{name}** [{real_id}]\n"
+                f"🔓 Access granted to server channels."
+            )
+        except discord.Forbidden:
+            await interaction.followup.send(
+                f"✅ Recognized as {name} [{real_id}], but...\n"
+                f"❌ **Error:** I cannot give you the role.\n"
+                f"👉 Admin must move the 'TornBot' role HIGHER than 'Verified' role in Server Settings."
+            )
+    else:
+        await interaction.followup.send(
+            f"✅ Recognized as {name} [{real_id}], but...\n"
+            f"⚠️ **Config Error:** The Verified Role ID in the bot code is incorrect."
+        )
 
 @bot.tree.command(name="tickets", description="Check your current raffle tickets.")
 async def tickets(interaction: discord.Interaction):
@@ -281,5 +330,6 @@ async def reset_raffle(interaction: discord.Interaction):
     await interaction.followup.send("✅ **Raffle Reset!** All tickets are 0.")
 
 bot.run(DISCORD_TOKEN)
+
 
 
